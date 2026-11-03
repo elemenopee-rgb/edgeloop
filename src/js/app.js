@@ -4377,6 +4377,12 @@ document.getElementById('voiceCuesList')?.addEventListener('click', (e) => {
     if (!text) return;
     setMindgamePrompt(text, true);
     if (!document.getElementById('paramVoiceToggle')?.checked) return;
+    const cueId = btn.getAttribute('data-voice-preview');
+    if (hasClips(cueId)) {
+        cancelSpeech();
+        playCueClip(cueId, { urgent: true });
+        return;
+    }
     speakNow(text, document.getElementById('paramVoiceSelect')?.value || '');
 });
 
