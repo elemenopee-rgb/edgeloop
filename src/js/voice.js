@@ -4,9 +4,10 @@ import { VOICE_CUE_CATALOG } from './voice-cues.js';
 // object URLs; no audio is uploaded or copied into browser storage.
 const audioByCue = new Map();
 const audioQueue = [];
+const lastVariantByCue = new Map();
 let activeAudio = null;
 let activeToken = 0;
-let activeUrl = '';
+let activeCueId = '';
 let micSpeakingUntil = 0;
 
 function stopCurrentAudio() {
@@ -18,18 +19,18 @@ function stopCurrentAudio() {
         activeAudio.currentTime = 0;
         activeAudio = null;
     }
-    activeUrl = '';
+    activeCueId = '';
 }
 
-function playUrl(url, token) {
-    if (!url || token !== activeToken) return;
-    const audio = new Audio(url);
+function playUrl(item, token) {
+    if (!item?.url || token !== activeToken) return;
+    const audio = new Audio(item.url);
     activeAudio = audio;
-    activeUrl = url;
+    activeCueId = item.cueId;
     const done = () => {
         if (token !== activeToken) return;
         activeAudio = null;
-        activeUrl = '';
+        activeCueId = '';
         micSpeakingUntil = Date.now() + MIC_SPEECH_TAIL_MS;
         playNext();
     };
@@ -40,23 +41,32 @@ function playUrl(url, token) {
 
 function playNext() {
     if (activeAudio || audioQueue.length === 0) return;
-    const next = audioQueue.shift();
-    playUrl(next.url, activeToken);
+    playUrl(audioQueue.shift(), activeToken);
+}
+
+function chooseVariant(cueId) {
+    const variants = audioByCue.get(cueId);
+    if (!variants?.length) return null;
+    const previous = lastVariantByCue.get(cueId);
+    const choices = variants.length > 1 ? variants.filter((item) => item !== previous) : variants;
+    const chosen = choices[Math.floor(Math.random() * choices.length)] || variants[0];
+    lastVariantByCue.set(cueId, chosen);
+    return { ...chosen, cueId };
 }
 
 function queueCue(cueId, urgent = false) {
-    const variants = audioByCue.get(cueId);
-    if (!variants?.length) return false;
-    const variant = variants[Math.floor(Math.random() * variants.length)];
+    const item = chooseVariant(cueId);
+    if (!item) return false;
     if (urgent) {
         audioQueue.length = 0;
         stopCurrentAudio();
-        const token = activeToken;
-        playUrl(variant.url, token);
+        playUrl(item, activeToken);
         return true;
     }
-    if (audioQueue.some((item) => item.cueId === cueId) || activeAudio && activeAudio.dataset?.cueId === cueId) return true;
-    audioQueue.push({ cueId, url: variant.url });
+    if (activeCueId === cueId || audioQueue.some((queued) => queued.cueId === cueId)) return true;
+    // Keep the queue bounded, like the former TTS queue.
+    if (audioQueue.length >= 3) return false;
+    audioQueue.push(item);
     playNext();
     return true;
 }
@@ -77,7 +87,7 @@ function cueIdForPrompt(text) {
             if (new RegExp(`^${escaped}$`, 'i').test(prompt)) return id;
         }
     }
-    // The factory phrases remain available even before Session Setup is opened.
+    // Factory phrases work even before Session Setup is opened.
     for (const cue of VOICE_CUE_CATALOG) {
         for (const template of cue.lines || []) {
             const escaped = String(template).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -85,6 +95,8 @@ function cueIdForPrompt(text) {
             if (new RegExp(`^${escaped}$`, 'i').test(prompt)) return cue.id;
         }
     }
+    // The built-in voice preview is a literal string, not a catalog phrase.
+    if (/voice (?:preview|edgeloop will use)/i.test(prompt)) return 'preview';
     return '';
 }
 
@@ -95,6 +107,7 @@ function releaseAllAudio() {
         for (const item of variants) URL.revokeObjectURL(item.url);
     }
     audioByCue.clear();
+    lastVariantByCue.clear();
 }
 
 function relativeName(file) {
@@ -106,7 +119,7 @@ function cueForFile(file) {
     const known = new Set(VOICE_CUE_CATALOG.map((cue) => cue.id));
     // Preferred layout: audio-folder/<cue-id>/<variation>.wav
     for (const part of parts.slice(0, -1)) if (known.has(part)) return part;
-    // Also accept audio-folder/<cue-id>_2.wav (or -2 / __2).
+    // Also accept audio-folder/<cue-id>_2.wav (or -2).
     const stem = parts.at(-1)?.replace(/\.[^.]+$/, '') || '';
     return [...known].find((id) => new RegExp(`^${id}(?:[_-].*)?$`, 'i').test(stem)) || '';
 }
@@ -115,7 +128,7 @@ function renderAudioCueStatus(root, message = '') {
     if (!root) return;
     const status = root.querySelector('#audioCueStatus');
     const list = root.querySelector('#audioCueList');
-    if (status) status.textContent = message || `${audioByCue.size} of ${VOICE_CUE_CATALOG.length} cue folders have audio loaded. Select the folder again after reloading the page.`;
+    if (status) status.textContent = message || `${audioByCue.size} cue folders have audio loaded. Select the folder again after reloading the page.`;
     if (!list) return;
     list.replaceChildren();
     for (const cue of VOICE_CUE_CATALOG) {
@@ -137,14 +150,25 @@ function renderAudioCueStatus(root, message = '') {
 
 function installAudioCuePicker() {
     const section = document.getElementById('paramsAudioSection');
-    if (!section || section.querySelector('#audioCueManager')) return;
+    if (!section) return;
+    // Reword the existing controls so no TTS voice-selection UI remains.
+    const voiceLabel = section.querySelector('label.text-xs.font-bold');
+    if (voiceLabel) voiceLabel.textContent = 'Play audio cues';
+    const voiceHelp = voiceLabel?.parentElement?.querySelector('p');
+    if (voiceHelp) voiceHelp.textContent = 'The cue text still appears on the dashboard. Turn this on to play your locally selected audio variations.';
+    const voiceSelect = section.querySelector('#paramVoiceSelect');
+    voiceSelect?.closest('.flex.items-center.gap-2')?.classList.add('hidden');
+    const previewButton = section.querySelector('#paramVoicePreviewBtn');
+    if (previewButton) previewButton.textContent = 'Preview audio';
+
+    if (section.querySelector('#audioCueManager')) return;
     const panel = document.createElement('section');
     panel.id = 'audioCueManager';
     panel.className = 'mt-3 p-3 rounded-xl border border-sky-900 bg-slate-950 space-y-2';
     panel.innerHTML = `
       <div>
         <p class="text-[10px] font-bold uppercase tracking-wider text-sky-300">Local audio cues</p>
-        <p class="text-[10px] text-slate-400 leading-snug mt-1">Choose a folder on your computer. Put variations in folders named for cue IDs (for example <code>edge/one.wav</code>, <code>edge/two.wav</code>). Audio stays on your device and is not uploaded. The folder must be selected again after a reload.</p>
+        <p class="text-[10px] text-slate-400 leading-snug mt-1">Choose a folder on your computer. Place variations in folders named for cue IDs, for example <code>edge/one.wav</code> and <code>edge/two.wav</code>. Audio stays on your device and is not uploaded. The folder must be selected again after a reload.</p>
       </div>
       <div class="flex flex-wrap gap-2">
         <button id="audioCueChoose" type="button" class="min-h-[2.75rem] px-3 rounded-lg bg-sky-700 hover:bg-sky-600 text-white text-xs font-bold">Choose audio folder</button>
@@ -168,7 +192,7 @@ function installAudioCuePicker() {
             const cueId = cueForFile(file);
             if (!cueId) { rejected.push(file.name); continue; }
             const variants = audioByCue.get(cueId) || [];
-            variants.push({ name: file.name, url: URL.createObjectURL(file) });
+            variants.push({ name: file.name, url: URL.createObjectURL(file), cueId });
             audioByCue.set(cueId, variants);
         }
         const summary = rejected.length
@@ -186,8 +210,8 @@ if (typeof document !== 'undefined') {
 }
 if (typeof window !== 'undefined') window.addEventListener('pagehide', releaseAllAudio, { once: true });
 
-// Existing app API: cue text is still painted on screen, but the voice output
-// is now a matching local audio variation. No browser speech synthesis is used.
+// Existing app API: cue text is still painted on screen, but speech output is
+// replaced by a matching local audio variation. No browser TTS is used.
 export function speakPrompt(enabled, text) {
     if (!enabled) return;
     const cueId = cueIdForPrompt(text);
@@ -205,6 +229,7 @@ export function cancelSpeech() {
     audioQueue.length = 0;
 }
 
+// Kept as a compatibility export for settings UI; browser voices are no longer used.
 export function listSpeechVoices() { return []; }
 
 export function setMindgamePrompt(text, visible) {
@@ -215,7 +240,7 @@ export function setMindgamePrompt(text, visible) {
 }
 
 // Optional microphone arousal monitor. Local cue playback holds the last
-// microphone sample during the clip and its short tail, just as TTS did.
+// microphone sample during a clip and its short tail, just as TTS did.
 export const MIC_CAPTURE_CONSTRAINTS = Object.freeze({ echoCancellation: { ideal: true }, noiseSuppression: { ideal: false }, autoGainControl: { ideal: false }, channelCount: { ideal: 1 } });
 export const MIC_PROCESSING_LABELS = Object.freeze({ noiseSuppression: 'noise suppression', autoGainControl: 'automatic gain control', echoCancellation: 'echo cancellation' });
 export function describeMicProcessing(settings) {
