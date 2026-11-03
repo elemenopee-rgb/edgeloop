@@ -858,11 +858,11 @@ describe('app.js keeps its side of the second round', () => {
         assert.match(src, /const corrected = applySettingSchema\(advancedSettings\);/);
     });
 
-    it('leaves both file imports reachable from the keyboard', () => {
+    it('leaves file pickers reachable from the keyboard', () => {
         // A <label> around a display:none input is not in the tab order.
         const labels = html.match(/data-file-label="[^"]+"/g) || [];
-        assert.equal(labels.length, 2, 'the settings import and the phrase import');
-        for (const id of ['importConfigFile', 'voiceCuesImportFile']) {
+        assert.equal(labels.length, 3, 'the settings import, phrase import, and audio folder picker');
+        for (const id of ['importConfigFile', 'voiceCuesImportFile', 'voiceClipsFolder']) {
             const label = html.slice(html.indexOf(`data-file-label="${id}"`) - 200, html.indexOf(`data-file-label="${id}"`) + 40);
             assert.match(label, /tabindex="0"/);
             assert.match(label, /role="button"/);

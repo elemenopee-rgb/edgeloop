@@ -1806,6 +1806,18 @@
               </select>
               <button id="paramVoicePreviewBtn" type="button" class="shrink-0 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-2 py-1 rounded-lg text-[10px] cursor-pointer">Preview</button>
             </div>
+            <div class="pt-1 border-t border-slate-900 space-y-1">
+              <label class="text-xs font-bold text-slate-200 block">Recorded audio clips</label>
+              <p class="text-[9px] text-slate-400 leading-snug">Pick a library folder with one subfolder per cue, named after the cue id (<span class="font-mono text-purple-300">edge</span>, <span class="font-mono text-purple-300">encourage</span>, <span class="font-mono text-purple-300">forceOrgasm</span>, <span class="font-mono text-purple-300">cameEarly</span> ...). When a cue fires with speech on, a random clip from its folder plays instead of the browser voice; cues without a folder are still spoken. Files stay on this device and the folder must be picked again after a reload.</p>
+              <div class="flex items-center gap-2">
+                <label for="voiceClipsFolder" role="button" tabindex="0" data-file-label="voiceClipsFolder" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-1.5 px-2 rounded-lg text-[10px] cursor-pointer text-center">
+                  Choose audio folder
+                  <input id="voiceClipsFolder" type="file" webkitdirectory multiple class="hidden">
+                </label>
+                <button id="voiceClipsClearBtn" type="button" class="text-[10px] text-slate-400 hover:text-purple-300 font-bold cursor-pointer px-1">Clear</button>
+              </div>
+              <p id="voiceClipsStatus" class="text-[9px] text-slate-400 leading-snug font-mono">No library loaded. Cues are spoken with the browser voice.</p>
+            </div>
             <p class="text-[9px] text-slate-400 leading-snug pt-1 border-t border-slate-900">
               One phrase per line. As many lines as you want for each event — a random unused line is picked each time. Empty a box and that cue is muted: it says nothing and paints nothing, and <strong>Export phrases</strong> carries the mute so <strong>Import phrases</strong> restores it. Tokens: <span class="font-mono text-purple-300">{hr}</span> <span class="font-mono text-purple-300">{maxHr}</span> <span class="font-mono text-purple-300">{minHr}</span> <span class="font-mono text-purple-300">{edges}</span> <span class="font-mono text-purple-300">{minutes}</span>.
             </p>

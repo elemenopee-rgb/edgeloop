@@ -156,6 +156,7 @@ import {
 } from './webrtc.js';
 import {
     cancelSpeech,
+    cancelTextSpeech,
     speakNow,
     speakPrompt,
     setMindgamePrompt,
@@ -184,6 +185,7 @@ import { createScriptFeed } from './player/script-feed.js';
 import { createPlayer } from './player/player.js';
 import { sanitizeScriptSettings, describeScriptPhase, edgeActionPausesVideo, sessionTargetForVideo, complementSecondary, scriptMotion, secondaryFromScript, climaxApproach, boostedAllowance, scriptExpand, clampClimaxSeconds, clampClimaxPhaseSeconds, DEFAULT_CLIMAX_RAMP_SECONDS, DEFAULT_CLIMAX_EASE_SECONDS } from './player/script-governor.js';
 import { offsetFor, rememberOffset, readOffsets, climaxMarksFor, rememberClimaxMarks, readClimaxMarks, describeVideoStall, describePlayerHardwareWait, videoCoupled, OFFSET_NUDGE_MS, SCRIPT_OFFSETS_STORAGE_KEY, SCRIPT_CLIMAX_STORAGE_KEY, BEAT_SYNC_CONSENT_KEY, BEAT_SYNC_STORAGE_KEY, BEAT_SYNC_CONSENT_TEXT } from './player/player-rules.js';
+import { setClipLibrary, clipCounts, hasClips, playCueClip, groupClipsByCue } from './voice-clips.js';
 import { rhythmAt, hampTarget } from './player/script-rhythm.js';
 import { posAt } from './player/script-track.js';
 import { effectiveInvert } from './player/script-shaper.js';
@@ -1547,6 +1549,12 @@ function cueVoice(key, urgent = false) {
     }
     setMindgamePrompt(text, true);
     if (!advancedSettings.voiceEnabled) return;
+    if (hasClips(key)) {
+        if (urgent) cancelSpeech();
+        else cancelTextSpeech();
+        playCueClip(key, { urgent });
+        return;
+    }
     const voiceURI = advancedSettings.voiceURI || '';
     if (urgent) speakNow(text, voiceURI);
     else speakPrompt(true, text, voiceURI);
@@ -4269,6 +4277,32 @@ if (window.speechSynthesis) {
     populateVoiceSelect();
     window.speechSynthesis.addEventListener('voiceschanged', populateVoiceSelect);
 }
+
+function paintClipLibraryStatus() {
+    const el = document.getElementById('voiceClipsStatus');
+    if (!el) return;
+    const counts = clipCounts();
+    const ids = Object.keys(counts);
+    el.textContent = ids.length
+        ? ids.map((id) => `${id}: ${counts[id]}`).join(', ')
+        : 'No library loaded. Cues are spoken with the browser voice.';
+}
+
+document.getElementById('voiceClipsFolder')?.addEventListener('change', (e) => {
+    const groups = groupClipsByCue(e.target.files, VOICE_CUE_CATALOG.map((c) => c.id));
+    setClipLibrary(groups);
+    paintClipLibraryStatus();
+    if (!Object.keys(groups).length) {
+        const el = document.getElementById('voiceClipsStatus');
+        if (el) el.textContent = 'No audio found in subfolders named after a cue (edge, encourage, ...).';
+    }
+    e.target.value = '';
+});
+
+document.getElementById('voiceClipsClearBtn')?.addEventListener('click', () => {
+    setClipLibrary({});
+    paintClipLibraryStatus();
+});
 
 document.getElementById('paramVoicePreviewBtn')?.addEventListener('click', () => {
     const sample = 'This is the voice EdgeLoop will use.';

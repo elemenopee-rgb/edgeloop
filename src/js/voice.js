@@ -7,6 +7,7 @@
  * and cancelSpeech() (STOP / Reset / voice turned off) interrupt speech.
  */
 import { createCueQueue } from './voice-queue.js';
+import { stopClip, isClipPlaying } from './voice-clips.js';
 
 const queue = createCueQueue({ maxQueued: 3 });
 let activeToken = 0;
@@ -104,6 +105,11 @@ export function speakNow(text, voiceURI = '') {
 // Silence everything: current cue and queue. Used on STOP, Reset and when
 // voice guidance is switched off.
 export function cancelSpeech() {
+    stopClip();
+    cancelTextSpeech();
+}
+
+export function cancelTextSpeech() {
     activeToken += 1;
     clearFallbackTimer();
     queue.clear();
@@ -412,7 +418,7 @@ export function micSampleSuppressed({
 // the last level is HELD instead of measured: the app never hears itself.
 export function sampleMicLevel(state, now = Date.now()) {
     const s = synth();
-    const speaking = Boolean(s && s.speaking);
+    const speaking = Boolean((s && s.speaking) || isClipPlaying());
     if (speaking) state.micSpeechAt = now;
     const held = Number.isFinite(state.micLastLevel) ? state.micLastLevel : 0;
     if (micSampleSuppressed({ speaking, lastSpeechAt: state.micSpeechAt, now })) {
